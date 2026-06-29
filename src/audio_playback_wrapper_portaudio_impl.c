@@ -107,6 +107,89 @@ static PaSampleFormat __get_sample_format_by_bitwidth(uint32_t bitwidth)
   return paInt16;
 }
 
+static PaError __try_open_playback_device(audio_playback_t *audio_playback,
+                                          PaDeviceIndex device,
+                                          uint32_t sample_rate,
+                                          uint32_t bit_width,
+                                          uint32_t channel_num)
+{
+  if (device == paNoDevice) {
+    return paDeviceUnavailable;
+  }
+
+  const PaDeviceInfo *deviceInfo = Pa_GetDeviceInfo(device);
+  if (deviceInfo == NULL || deviceInfo->maxOutputChannels < (int)channel_num) {
+    return paDeviceUnavailable;
+  }
+
+  PaStreamParameters outputParameters;
+  memset(&outputParameters, 0, sizeof(outputParameters));
+  outputParameters.device = device;
+  outputParameters.channelCount = channel_num;
+  outputParameters.sampleFormat = __get_sample_format_by_bitwidth(bit_width);
+  outputParameters.suggestedLatency = deviceInfo->defaultLowOutputLatency;
+  outputParameters.hostApiSpecificStreamInfo = NULL;
+
+  if (Pa_IsFormatSupported(NULL, &outputParameters, sample_rate) != paFormatIsSupported) {
+    LOGD(TAG, "device %d '%s' does not support format %uHz %ubit %uch",
+         device, deviceInfo->name, sample_rate, bit_width, channel_num);
+    return paSampleFormatNotSupported;
+  }
+
+  return Pa_OpenStream(&audio_playback->pa_stream,
+                       NULL,
+                       &outputParameters,
+                       sample_rate,
+                       paFramesPerBufferUnspecified,
+                       paNoFlag,
+                       __portaudio_playback,
+                       audio_playback);
+}
+
+static PaError __open_playback_stream(audio_playback_t *audio_playback,
+                                      uint32_t sample_rate,
+                                      uint32_t bit_width,
+                                      uint32_t channel_num)
+{
+  int device_count = Pa_GetDeviceCount();
+  if (device_count < 0) {
+    LOGE(TAG, "Failed to query PortAudio devices. err=%d", device_count);
+    return (PaError)device_count;
+  }
+
+  PaDeviceIndex defaultDevice = Pa_GetDefaultOutputDevice();
+  PaError err = __try_open_playback_device(audio_playback,
+                                           defaultDevice,
+                                           sample_rate,
+                                           bit_width,
+                                           channel_num);
+  if (err == paNoError) {
+    LOGT(TAG, "Opened PortAudio output using default device %d", defaultDevice);
+    return paNoError;
+  }
+
+  for (PaDeviceIndex device = 0; device < device_count; ++device) {
+    if (device == defaultDevice) {
+      continue;
+    }
+
+    err = __try_open_playback_device(audio_playback,
+                                     device,
+                                     sample_rate,
+                                     bit_width,
+                                     channel_num);
+    if (err == paNoError) {
+      const PaDeviceInfo *info = Pa_GetDeviceInfo(device);
+      LOGT(TAG, "Opened PortAudio output using fallback device %d '%s'",
+           device, info ? info->name : "unknown");
+      return paNoError;
+    }
+  }
+
+  LOGE(TAG, "No compatible PortAudio output device found.");
+  return paDeviceUnavailable;
+}
+
 audio_playback_handle_t audio_playback_wrapper_create(uint32_t sample_rate,
                                                       uint32_t bit_width,
                                                       uint32_t channel_num)
@@ -126,29 +209,17 @@ audio_playback_handle_t audio_playback_wrapper_create(uint32_t sample_rate,
   PaError err = Pa_Initialize();
   if (err != paNoError) {
     LOGE(TAG, "Failed to initialize PortAudio. err=%s", Pa_GetErrorText(err));
+    amf_ringbuf_destroy(audio_playback->playback_ringbuf);
     free(audio_playback);
     return NULL;
   }
   assert(err == paNoError);
 
-  PaStreamParameters outputParameters;
-  memset(&outputParameters, 0, sizeof(outputParameters));
-  outputParameters.device                    = Pa_GetDefaultOutputDevice();
-  outputParameters.channelCount              = channel_num;
-  outputParameters.sampleFormat              = __get_sample_format_by_bitwidth(bit_width);
-  outputParameters.suggestedLatency          = Pa_GetDeviceInfo(outputParameters.device)->defaultLowInputLatency;
-  outputParameters.hostApiSpecificStreamInfo = NULL;
-
-  err = Pa_OpenStream(&audio_playback->pa_stream,
-                      NULL,
-                      &outputParameters,
-                      sample_rate,
-                      paFramesPerBufferUnspecified,
-                      paNoFlag,
-                      __portaudio_playback,
-                      audio_playback);
+  err = __open_playback_stream(audio_playback, sample_rate, bit_width, channel_num);
   if (err != paNoError) {
-    LOGE(TAG, "Failed to open PortAudio default stream. err=%s", Pa_GetErrorText(err));
+    LOGE(TAG, "Failed to open PortAudio stream. err=%s", Pa_GetErrorText(err));
+    Pa_Terminate();
+    amf_ringbuf_destroy(audio_playback->playback_ringbuf);
     free(audio_playback);
     return NULL;
   }
