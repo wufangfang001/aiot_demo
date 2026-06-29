@@ -23,14 +23,18 @@ static void process_capture_data(char *data,
   fwrite(data, len, 1, fd);
 }
 
-int main()
+int main(int argc, char **argv)
 {
   static FILE *fd = NULL;
   audio_wrapper_handle_t audio_handle;
+  const char *pcm_path = (argc > 1) ? argv[1] : "save_audio.pcm";
 
   /* step1. 打开文件，用于存储采集PCM音频 */
-  fd = fopen("save_audio.pcm", "wb");
-  assert(fd);
+  fd = fopen(pcm_path, "wb");
+  if (!fd) {
+    fprintf(stderr, "open audio file %s failed.\n", pcm_path);
+    return 1;
+  }
 
   /* step2. 创建音频采集 */
   audio_handle = audio_capture_wrapper_create(process_capture_data,

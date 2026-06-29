@@ -15,11 +15,12 @@
 #define CAPTURE_BIT_WIDTH     (16)
 #define CAPTURE_CHANNEL_NUM   (1)
 
-int main()
+int main(int argc, char **argv)
 {
   audio_playback_handle_t play_handle;
   uint8_t audio_data[640];
   FILE *fd;
+  const char *pcm_path = (argc > 1) ? argv[1] : "audio.pcm";
 
   /* step1. 创建audio playback */
   play_handle = audio_playback_wrapper_create(CAPTURE_SAMPLE_RATE,
@@ -28,9 +29,9 @@ int main()
   assert(play_handle);
 
   /* step2. 打开测试播放源pcm文件(16K,16bit,1channel) */
-  if (NULL == (fd = fopen("audio.pcm", "rb"))) {
-    printf("open audio file failed.\n");
-    return 0;
+  if (NULL == (fd = fopen(pcm_path, "rb"))) {
+    fprintf(stderr, "open audio file %s failed.\n", pcm_path);
+    return 1;
   }
 
   audio_playback_wrapper_set_volume(play_handle, 50);
