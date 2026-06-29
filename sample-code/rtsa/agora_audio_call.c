@@ -29,20 +29,19 @@
 #define DEFAULT_AUDIO_CODEC_TYPE      AUDIO_CODEC_TYPE_OPUS
 
 #define CONFIG_SEND_PCM_DATA
-#define CONFIG_PCM_FRAME_LEN          (640)
-#define CONFIG_PCM_SAMPLE_RATE        (16000)
-#define CONFIG_PCM_CHANNEL_NUM        (1)
+#define CONFIG_PCM_SAMPLE_RATE         (48000)
+#define CONFIG_PCM_CHANNEL_NUM         (1)
+#define CONFIG_AUDIO_FRAME_DURATION_MS (20)
+#define CONFIG_PCM_FRAME_LEN           (CONFIG_PCM_SAMPLE_RATE * CONFIG_AUDIO_FRAME_DURATION_MS * CONFIG_PCM_CHANNEL_NUM * 2 / 1000) // 2 bytes per sample
 
 /* Enable VAD test functionality in audio send path */
-#define CONFIG_ENABLE_FVAD_TEST       0
+#define CONFIG_ENABLE_FVAD_TEST         0
 /* Enable saving PCM to mic.pcm / speak.pcm */
-#define CONFIG_ENABLE_PCM_FILE_SAVE           0
+#define CONFIG_ENABLE_PCM_FILE_SAVE     0
 
 #define DEFAULT_BANDWIDTH_ESTIMATE_MIN_BITRATE   (100000)
 #define DEFAULT_BANDWIDTH_ESTIMATE_MAX_BITRATE   (1000000)
 #define DEFAULT_BANDWIDTH_ESTIMATE_START_BITRATE (500000)
-
-#define CONFIG_AUDIO_FRAME_DURATION_MS (CONFIG_PCM_FRAME_LEN * 1000 / CONFIG_PCM_SAMPLE_RATE / CONFIG_PCM_CHANNEL_NUM / sizeof(int16_t))
 
 #ifdef CONFIG_LICENSE
 static const char *certificate_for_test = "license";
@@ -100,7 +99,7 @@ static int __send_audio_frame()
 {
   audio_frame_info_t info = { 0 };
   info.data_type = AUDIO_DATA_TYPE_PCM;
-  char capture_audio[640] = {0};
+  char capture_audio[CONFIG_PCM_FRAME_LEN] = {0};
 
   if (0 > amf_ringbuf_read(capture_audio, sizeof(capture_audio), g_app.capture_ringbuf_handle)) {
     printf("warning: not have enough send data.\n");
@@ -233,6 +232,7 @@ static uint64_t os_get_time_now_us ()
 static void __on_audio_data(connection_id_t conn_id, const uint32_t uid, uint16_t sent_ts, const void *data, size_t len,
                             const audio_frame_info_t *info_ptr)
 {
+#if 0
   static int64_t last_time_ms = 0;
   int64_t cur_time_ms = 0;
   int64_t diff_time_ms = 0;
@@ -249,6 +249,7 @@ static void __on_audio_data(connection_id_t conn_id, const uint32_t uid, uint16_
     printf("[%s] diff_time_ms = %ld\n", time_str, diff_time_ms);
   }
   last_time_ms = cur_time_ms;
+#endif
   __play_audio_data_push(data, (int)len);
 }
 
@@ -353,14 +354,14 @@ int main(int argc, char **argv)
   g_app.playback_ringbuf_handle = amf_ringbuf_create(32 * 1024);
 
   /* step3. 创建音频播放 */
-  g_app.playback_handle = audio_playback_wrapper_create(16000, 16, 1);
+  g_app.playback_handle = audio_playback_wrapper_create(CONFIG_PCM_SAMPLE_RATE, 16, 1);
   if (NULL == g_app.playback_handle) {
     printf("Failed to create audio playback\n");
     goto L_ERROR_AUDIO_PLAYBACK_CREATE_FAILED;
   }
 
   /* step4. 创建音频采集 */
-  g_app.capture_handle = audio_capture_wrapper_create(__process_capture_data, 16000, 16, 1, NULL);
+  g_app.capture_handle = audio_capture_wrapper_create(__process_capture_data, CONFIG_PCM_SAMPLE_RATE, 16, 1, NULL);
   if (NULL == g_app.capture_handle) {
     printf("Failed to create audio capture\n");
     goto L_ERROR_AUDIO_CAPTURE_CREATE_FAILED;

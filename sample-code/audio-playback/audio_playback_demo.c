@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#define CAPTURE_SAMPLE_RATE   (16000)
+#define CAPTURE_SAMPLE_RATE   (48000)
 #define CAPTURE_BIT_WIDTH     (16)
 #define CAPTURE_CHANNEL_NUM   (1)
 
